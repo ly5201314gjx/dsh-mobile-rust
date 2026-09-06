@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -37,6 +38,8 @@ public class MainActivity extends Activity {
     public static final String KEY_DESKTOP = "desktop_mode";
     public static final String KEY_MODE = "server_mode";
     public static final String KEY_API_KEY = "api_key";
+    /** 最近一次 DSH Link 配对链接（dsh-link://...），用于展示/重连。 */
+    public static final String KEY_PAIR_LINK = "pair_link";
     public static final String MODE_LOCAL = "local";
     public static final String MODE_PC = "pc";
     public static final String DEFAULT_URL = "http://127.0.0.1:3080";
@@ -220,6 +223,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        handleLinkIntent(getIntent());
 
         web = findViewById(R.id.webview);
         progress = findViewById(R.id.progress);
@@ -632,6 +636,38 @@ public class MainActivity extends Activity {
 
     private void openSettings() {
         startActivity(new Intent(this, SettingsActivity.class));
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleLinkIntent(intent);
+    }
+
+    /** 收到 dsh-link:// 深链接（外部分享/扫码唤起）时：解析并切到「连接电脑」模式。 */
+    private void handleLinkIntent(Intent intent) {
+        if (intent == null) return;
+        Uri data = intent.getData();
+        if (data == null) return;
+        String scheme = data.getScheme();
+        if (scheme == null || !scheme.equalsIgnoreCase("dsh-link")) return;
+
+        DshLink dl = DshLink.parse(data.toString());
+        if (dl == null) {
+            Toast.makeText(this, "无效的 DSH Link 配对链接", Toast.LENGTH_LONG).show();
+            return;
+        }
+        prefs.edit()
+                .putString(KEY_MODE, MODE_PC)
+                .putString(KEY_URL, dl.webUrl())
+                .putString(KEY_PAIR_LINK, dl.toString())
+                .apply();
+        stopLocalServer(); // 释放本机 127.0.0.1:3080
+        Toast.makeText(this,
+                "已配对电脑 " + dl.host + "\n正在连接电脑端 DSH…",
+                Toast.LENGTH_LONG).show();
+        reload();
     }
 
     @Override

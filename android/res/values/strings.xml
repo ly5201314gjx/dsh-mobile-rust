@@ -84,4 +84,26 @@
     <string name="dlg_delete">删除</string>
     <string name="dlg_cancel">取消</string>
     <string name="perm_storage">需要「存储」权限才能把产物导出到 Download 目录。</string>
+
+    <!-- v3.1 DSH Link 配对（扫码/填链接连接电脑） -->
+    <string name="pair_label">或使用 DSH Desktop 配对链接</string>
+    <string name="pair_input_hint">粘贴电脑端配对链接，如 dsh-link://192.168.1.5:5780/#key=…</string>
+    <string name="btn_pair_link">使用配对链接连接</string>
+    <string name="pair_invalid">无法解析的 DSH Link 配对链接，请检查是否复制完整</string>
+    <string name="pair_ok">已配对电脑 %1$s，正在检测并连接…</string>
+    <string name="pair_scan_tip">电脑端 DSH Desktop 启动后会显示配对链接/二维码；\n用手机任意扫码 App 扫二维码，或在下方粘贴链接即可。\n（二维码可唤起本 App 自动连接）</string>
+
+    <!-- v3.1 DSH Link 通道（配对后与电脑端双向同步） -->
+    <string name="channel_idle">（尚未配对通道）</string>
+    <string name="channel_connecting">正在连接电脑端 DSH 通道…</string>
+    <string name="channel_ok">已配对：%1$s</string>
+    <string name="channel_need_pair">在下方粘贴电脑端配对链接，或直接用手机扫二维码唤起，即可建立通道。</string>
+    <string name="session_idle">（等待会话数据…）</string>
+    <string name="session_count">电脑端 DSH 会话 %1$d 个</string>
+    <string name="session_zero">电脑端暂无会话（打开电脑端 DSH 对话后会自动同步）</string>
+    <string name="btn_send_pc">向电脑端发送测试指令</string>
+    <string name="send_sent">已发送，等待电脑端应答…</string>
+    <string name="send_ack_ok">电脑端已应答（ok）</string>
+    <string name="send_ack_fail">电脑端应答：失败 %1$s</string>
+    <string name="send_not_open">通道未建立，无法发送。请先配对。</string>
 </resources>

@@ -159,6 +159,80 @@
                 android:text="@string/btn_test_conn"
                 style="@style/DshButtonSecondary"
                 android:visibility="gone" />
+
+            <!-- DSH Link 配对：扫码/填链接连接电脑 -->
+            <TextView
+                android:id="@+id/pair_scan_tip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/pair_scan_tip"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/pair_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/pair_label"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <EditText
+                android:id="@+id/pair_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/pair_input_hint"
+                android:inputType="textUri"
+                android:singleLine="true"
+                style="@style/DshInput"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btn_pair"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/btn_pair_link"
+                style="@style/DshButtonSecondary"
+                android:visibility="gone" />
+
+            <!-- DSH Link 通道：配对成功后与电脑端建立双向同步通道 -->
+            <TextView
+                android:id="@+id/channel_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/channel_idle"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/session_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/session_idle"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btn_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/btn_send_pc"
+                style="@style/DshButtonSecondary"
+                android:visibility="gone" />
         </LinearLayout>
 
         <CheckBox

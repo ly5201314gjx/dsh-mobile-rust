@@ -23,6 +23,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import javax.net.ssl.SSLException;
 
@@ -39,9 +40,21 @@ public class SettingsActivity extends Activity {
     private TextView apiKeyHint;
     private TextView pcStatus;
     private TextView hintConn;
+    private TextView pairScanTip;
+    private TextView pairLabel;
+    private EditText pairInput;
+    private Button btnPair;
     private Button btnRestart;
     private Button btnTest;
+    private TextView channelStatus;
+    private TextView sessionStatus;
+    private Button btnSend;
     private SharedPreferences prefs;
+
+    /** 与电脑端 DSH 的配对通道（WebSocket）。 */
+    private DshChannel channel;
+    /** 最近一次成功解析的配对链接（含 host/linkPort/key）。 */
+    private DshLink paired;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,8 +72,15 @@ public class SettingsActivity extends Activity {
         statusText = findViewById(R.id.server_status);
         pcStatus = findViewById(R.id.pc_status);
         hintConn = findViewById(R.id.hint_conn);
+        pairScanTip = findViewById(R.id.pair_scan_tip);
+        pairLabel = findViewById(R.id.pair_label);
+        pairInput = findViewById(R.id.pair_input);
+        btnPair = findViewById(R.id.btn_pair);
         btnRestart = findViewById(R.id.btn_restart);
         btnTest = findViewById(R.id.btn_test);
+        channelStatus = findViewById(R.id.channel_status);
+        sessionStatus = findViewById(R.id.session_status);
+        btnSend = findViewById(R.id.btn_send);
 
         boolean local = MainActivity.MODE_LOCAL.equals(
                 prefs.getString(MainActivity.KEY_MODE, MainActivity.MODE_LOCAL));
@@ -68,6 +88,7 @@ public class SettingsActivity extends Activity {
         radioPc.setChecked(!local);
 
         urlInput.setText(prefs.getString(MainActivity.KEY_URL, MainActivity.DEFAULT_URL));
+        pairInput.setText(prefs.getString(MainActivity.KEY_PAIR_LINK, ""));
         apiKeyInput.setText(prefs.getString(MainActivity.KEY_API_KEY, ""));
         keepOn.setChecked(prefs.getBoolean(MainActivity.KEY_KEEP_ON, true));
 
@@ -89,6 +110,14 @@ public class SettingsActivity extends Activity {
             @Override public void onClick(View v) { testConnection(); }
         });
 
+        btnPair.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { pairConnect(); }
+        });
+
+        btnSend.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { sendToPc(); }
+        });
+
         findViewById(R.id.btn_artifacts).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 startActivity(new Intent(SettingsActivity.this, ArtifactsActivity.class));
@@ -105,6 +134,14 @@ public class SettingsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshStatus();
+        // 「连接电脑」模式回到本页时，若已有配对链接则自动恢复通道
+        maybeReopenChannel();
+    }
+
+    @Override
+    protected void onDestroy() {
+        closeChannel();
+        super.onDestroy();
     }
 
     private boolean localChecked() { return radioLocal.isChecked(); }
@@ -118,6 +155,25 @@ public class SettingsActivity extends Activity {
         btnTest.setVisibility(local ? View.GONE : View.VISIBLE);
         pcStatus.setVisibility(local ? View.GONE : View.VISIBLE);
         hintConn.setVisibility(local ? View.GONE : View.VISIBLE);
+        pairScanTip.setVisibility(local ? View.GONE : View.VISIBLE);
+        pairLabel.setVisibility(local ? View.GONE : View.VISIBLE);
+        pairInput.setVisibility(local ? View.GONE : View.VISIBLE);
+        btnPair.setVisibility(local ? View.GONE : View.VISIBLE);
+        int chanVis = local ? View.GONE : View.VISIBLE;
+        channelStatus.setVisibility(chanVis);
+        sessionStatus.setVisibility(chanVis);
+        btnSend.setVisibility(chanVis);
+        if (local) {
+            closeChannel();
+        } else if (channel == null) {
+            // 未建立通道时展示配对引导
+            String stored = prefs.getString(MainActivity.KEY_PAIR_LINK, "");
+            if (stored != null && !stored.isEmpty()) {
+                channelStatus.setText(R.string.channel_connecting);
+            } else {
+                channelStatus.setText(R.string.channel_need_pair);
+            }
+        }
         refreshStatus();
     }
 
@@ -191,6 +247,116 @@ public class SettingsActivity extends Activity {
         final String kind;   // OK / OK_UNKNOWN / HTTP / REFUSED / TIMEOUT / HOST / SSL / ERR
         final String text;
         ProbeResult(String kind, String text) { this.kind = kind; this.text = text; }
+    }
+
+    /** 解析并保存一条 DSH Link 配对链接，切到「连接电脑」后检测连接。 */
+    private void pairConnect() {
+        String text = pairInput.getText().toString().trim();
+        DshLink dl = DshLink.parse(text);
+        if (dl == null) {
+            Toast.makeText(this, R.string.pair_invalid, Toast.LENGTH_LONG).show();
+            return;
+        }
+        prefs.edit()
+                .putString(MainActivity.KEY_MODE, MainActivity.MODE_PC)
+                .putString(MainActivity.KEY_URL, dl.webUrl())
+                .putString(MainActivity.KEY_PAIR_LINK, dl.toString())
+                .apply();
+        // 停掉本机服务，释放 127.0.0.1:3080
+        Intent stop = new Intent(this, DshServerService.class);
+        stop.setAction(DshServerService.ACTION_STOP);
+        startService(stop);
+
+        radioPc.setChecked(true);
+        urlInput.setText(dl.webUrl());
+        pcStatus.setText(getString(R.string.pair_ok, dl.host));
+        openChannelFor(dl); // 建立 DSH Link 双向通道
+        testConnection();
+    }
+
+    /** 用配对链接建立/重建与电脑端的 DSH Link 通道。 */
+    private void openChannelFor(final DshLink dl) {
+        if (dl == null) return;
+        if (channel != null &&
+                dl.host.equals(paired != null ? paired.host : null)
+                && dl.linkPort == (paired != null ? paired.linkPort : -1)
+                && dl.key.equals(paired != null ? paired.key : null)) {
+            return; // 相同配对目标，复用当前通道
+        }
+        closeChannel();
+        paired = dl;
+        channelStatus.setText(R.string.channel_connecting);
+        sessionStatus.setText(R.string.session_idle);
+        DshChannel c = new DshChannel(dl.host, dl.linkPort, dl.key, new DshChannel.Listener() {
+            @Override public void onOpen(String serverId, String serverName) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        channelStatus.setText(getString(R.string.channel_ok, serverName));
+                    }
+                });
+            }
+            @Override public void onSessionSnap(List<DshChannel.SessionInfo> sessions) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (sessions == null || sessions.isEmpty()) {
+                            sessionStatus.setText(R.string.session_zero);
+                        } else {
+                            sessionStatus.setText(getString(R.string.session_count, sessions.size()));
+                        }
+                    }
+                });
+            }
+            @Override public void onAck(boolean ok, String reason) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (ok) {
+                            sessionStatus.setText(R.string.send_ack_ok);
+                        } else {
+                            sessionStatus.setText(getString(R.string.send_ack_fail,
+                                    reason == null ? "" : reason));
+                        }
+                    }
+                });
+            }
+            @Override public void onClose(String reason) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        channelStatus.setText(reason == null ? "" : reason);
+                    }
+                });
+            }
+        });
+        channel = c;
+        c.start();
+    }
+
+    /** 回到本页且处于「连接电脑」模式时，用已保存配对链接自动恢复通道。 */
+    private void maybeReopenChannel() {
+        if (localChecked()) return;
+        if (channel != null) return; // 已连接
+        String stored = prefs.getString(MainActivity.KEY_PAIR_LINK, "");
+        if (stored == null || stored.isEmpty()) return;
+        DshLink dl = DshLink.parse(stored);
+        if (dl != null) openChannelFor(dl);
+    }
+
+    /** 关闭当前通道。 */
+    private void closeChannel() {
+        if (channel != null) {
+            channel.stop();
+            channel = null;
+        }
+        paired = null;
+    }
+
+    /** 向电脑端发一条测试指令，验证双向通道。 */
+    private void sendToPc() {
+        if (channel == null) {
+            Toast.makeText(this, R.string.send_not_open, Toast.LENGTH_LONG).show();
+            return;
+        }
+        sessionStatus.setText(R.string.send_sent);
+        channel.sendMessage(null, "dsh-link ping from android @" + System.currentTimeMillis());
     }
 
     /** 「连接电脑」模式的连接检测：后台 HTTP 探测，把失败原因翻译成人话 */

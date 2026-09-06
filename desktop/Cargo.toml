@@ -1,0 +1,19 @@
+[package]
+name = "dsh-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DSH Desktop 守护进程：Windows/Linux 上承载 DSH Web 服务，并开放 DSH Link 配对/远程通道（二维码 + 配对页 + WebSocket）"
+
+[[bin]]
+name = "dsh-desktop"
+path = "src/main.rs"
+
+[dependencies]
+dsh-core = { path = "../core" }
+dsh-link = { path = "../link" }
+serde_json = "1"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

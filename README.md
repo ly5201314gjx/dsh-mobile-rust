@@ -2,6 +2,8 @@
 
 在 Android 手机上**独立运行完整 DeepSeek Harness（DSH）**的移动端，使用 **Rust 完全重写**其中核心服务端逻辑与构建管线的开源实现：一个原生 WebView 壳 + 内嵌 aarch64 Node.js 运行时 + 裁剪后的 DSH 依赖树。手机自己启动 DSH 服务（`127.0.0.1:3080`），不依赖电脑，可离线于 PC 使用。
 
+仓库同时包含一个 **Windows 桌面守护进程（`desktop/`，`dsh-desktop`）**，让 DSH 也能直接在 Windows 上运行，并自研了 **DSH Link 配对协议**：电脑端启动后生成配对链接/二维码，手机扫码或填链接即可配对，通过 WebSocket 通道与电脑端双向同步（查看会话、向电脑端下发指令），参考了 [Paseo](https://github.com/getpaseo/paseo) 的「扫码配对 → 多端访问本地 daemon」模型。
+
 > 本仓库是原项目 [aojiepp/dsh-mobile](https://github.com/aojiepp/dsh-mobile)（Java + Python 构建）的 **Rust 重写版**：将原先由 Java/Python 承担的「Node 进程守护、payload 解包、端到端 URL 解析、崩溃重启、APK 构建」等逻辑全部迁移到 Rust，Java 仅保留一层极薄的 WebView 壳。
 
 ## 为什么是 Rust
@@ -30,9 +32,11 @@
 ## 目录结构
 ```
 dsh-mobile-rust/
-├── Cargo.toml                    # workspace：core / app / tool
+├── Cargo.toml                    # workspace：core / app / tool / link / desktop
 ├── core/                         # 纯 Rust 核心逻辑（服务管理、状态、端口）
 ├── app/                          # Android JNI 接口与实现
+├── link/                         # DSH Link 配对协议 crate（密钥/链接/报文编解码，两端共用）
+├── desktop/                      # Windows 桌面守护进程 dsh-desktop（配对服务 + DSH 拉起）
 ├── tool/                         # Rust 构建工具（payload 打包、APK 构建）
 ├── android/                      # Java 壳、资源、Manifest
 │   ├── java/com/rustdsh/mobile/  # MainActivity / DshServerService / SettingsActivity …
@@ -41,6 +45,52 @@ dsh-mobile-rust/
 ├── fetch-debs.sh                 # 下载 Termux 运行时 .deb
 └── debs/ payload/ target/ dist/  # 归档与构建产物（已 gitignore）
 ```
+
+## Windows 桌面端 + DSH Link 多端配对
+
+### 多端架构
+```
+┌──────────────────────────── 手机（Android DshCommunity） ────────────────────────────┐
+│ MainActivity(WebView)  DshServerService(本机3080)   SettingsActivity ┌ 配对/通道 UI │
+│                                                  DshChannel ──────────┐            │
+└───────────────────────────────────────────────────────────────────┬───┴────────────┘
+                                                                    │ 配对链接/二维码
+                                                                    │ (dsh-link://) + WebSocket /ws?key=…
+   Windows 电脑 · dsh-desktop ─────────────────────────────────────┴───────────┐
+ │  node 子进程 → DSH Web (0.0.0.0:3080)    配对/控制服务 (0.0.0.0:5780)          │
+ │  （崩溃自动重启）                        · /pair 配对页                       │
+ └──────────────────────────────────────────· /ws    通道（hello/session_snap）──┘
+```
+
+### DSH Link 配对协议（`link/` crate，自研，两端共用）
+- 每次启动 `dsh-desktop` 生成一次性 `PairingKey`（20 字节 hex 40 位），作为通道的预共享密钥。
+- 链接编码为二维码负载 / 可复制文本：`dsh-link://<host>[:port]/#key=<hex>`（另有 `http://…/pair?key=` 浏览器兼容形态）。
+- 通道：客户端以 `GET /ws?key=<hex>` 发起 **WebSocket** 升级（RFC 6455，客户端掩码帧），随后按 `Message` 报文信封收发：
+  - 客户端 `hello` → 服务端 `hello_ack` + `session_snap`（电脑端会话摘要，自动分发到手机）；
+  - 客户端 `send_msg` → 服务端落盘 `$DSH_HOME/dsh-link.received.jsonl` 并回 `ack`，供上层接管执行。
+- Rust 与 Android 端（`DshChannel.java`，纯 Java 手写 WS，零三方依赖）解析逻辑逐字段一致，单测与端到端验证通过。
+
+### Windows 上构建与运行（可直接安装使用）
+```bash
+# Rust 交叉编译到 Windows（在 Windows 本机或 CI 中）
+cargo build --release -p dsh-desktop --target x86_64-pc-windows-msvc
+```
+发布目录内需要三样东西，组成一个免安装运行包：
+1. `dsh-desktop.exe`（本 daemon）
+2. 一个 `node.exe`（DSH 的运行依赖；Windows x64 官方安装包里的 node 即可）
+3. `payload/dsh-app/`（DSH 前端/服务 JS 源码树，即本仓库 `payload/dsh-app`）
+
+```bash
+# Windows 命令提示符：启动桌面端（自动拉起 DSH Web，并开启配对服务）
+dsh-desktop.exe --app-dir payload\dsh-app --node node --home dsh-home
+```
+启动后终端会打印**配对链接**并把 `http://<电脑IP>:5780/pair` 配对页输出到浏览器（含**二维码**）。
+
+### 手机端配对（两种方式任选）
+1. **扫码**：电脑端配对页显示二维码，用手机任意带扫码能力的 App 扫一下，即可唤起本 App 并自动进入「连接电脑」配对。
+2. **填链接**：在 App「设置 → 连接电脑」里粘贴 `dsh-link://…` 链接 →「使用配对链接连接」。
+
+> 说明：手机与电脑需在同一局域网（电脑的 5780/3080 端口防火墙放行）。配对成功后在设置页可见「已配对：dsh-desktop@主机名」，并列出**电脑端 DSH 会话数量**；点「向电脑端发送测试指令」可验证双向通道（电脑端会落盘 `dsh-link.received.jsonl` 并应答）。
 
 ## 构建（全 Rust，零 Gradle）
 需要：Rust 稳定版、`aarch64-linux-android` 交叉目标 + NDK 链接器、Android SDK（build-tools + platform android-34）、JDK 17。
@@ -60,7 +110,7 @@ target/release/dsh-tool build-apk <android-dir> <out.apk> \
 ## 安装与使用
 - 首次启动解压 payload 约 1–3 分钟，之后秒开。
 - **API Key**：App 设置页填写（写入 `$DSH_HOME/.env`），或启动后在 DSH 界面「设置 → 模型」里存储。
-- **双模式**：设置页可切换「本机内置服务」/「连接电脑上的 DSH」，后者支持 USB + adb reverse 隧道与断连自动重连。
+- **双模式**：设置页可切换「本机内置服务」/「连接电脑上的 DSH」。前者支持 USB + adb reverse 隧道与断连自动重连；后者支持 `dsh-link://` 扫码/填链接配对（见上文「DSH Link 配对协议」），配对后经 WebSocket 通道与电脑端双向同步。
 - 通知权限用于前台服务保活；进程随应用关闭而退出。
 
 ## 已知限制与设计取舍
