@@ -23,6 +23,8 @@ pub struct DesktopCfg {
     pub web_port: u16,
     /// 绑定地址（默认 127.0.0.1 回环；DSH web 拒绝非回环）。
     pub host: String,
+    /// 对外 Web UI 隧道域名（--advertise-web），注入 --trusted-host。
+    pub advertise_web_host: Option<String>,
 }
 
 static RUNNING: AtomicI32 = AtomicI32::new(0);
@@ -119,16 +121,21 @@ fn spawn_node(cfg: &DesktopCfg) -> Result<Child, String> {
         .map_err(|e| format!("open log: {e}"))?;
     let log_err = log.try_clone().map_err(|e| format!("clone log: {e}"))?;
 
+    let mut cmd_args: Vec<String> = vec![
+        "--expose-internals".into(),
+        "lib/bin.js".into(),
+        "web".into(),
+        "--host".into(),
+        cfg.host.clone(),
+        "--port".into(),
+        cfg.web_port.to_string(),
+    ];
+    if let Some(w) = &cfg.advertise_web_host {
+        cmd_args.push("--trusted-host".into());
+        cmd_args.push(w.clone());
+    }
     let child = Command::new(&cfg.node)
-        .args([
-            "--expose-internals",
-            "lib/bin.js",
-            "web",
-            "--host",
-            &cfg.host,
-            "--port",
-            &cfg.web_port.to_string(),
-        ])
+        .args(cmd_args)
         .current_dir(&cfg.app_dir)
         // 继承宿主 PATH 等环境，仅注入 DSH_HOME
         .env("DSH_HOME", &cfg.home_dir)

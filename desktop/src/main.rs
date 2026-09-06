@@ -144,6 +144,7 @@ fn main() {
                 log_file: home_dir.join("dsh-desktop-node.log"),
                 web_port,
                 host: "127.0.0.1".into(), // 回环:DSH web 拒绝 0.0.0.0 绑定;对外经 5780/隧道/token代理转发
+                advertise_web_host: advertise_web.clone(),
             });
         }
     }
