@@ -249,15 +249,18 @@ fn atomic_write_text(path: &Path, text: &str) {
 
 /// 先 SIGTERM，等 1 秒，再 SIGKILL。
 fn stop_child(child: &mut Child) {
-    let pid = child.id() as i32;
-    unsafe {
-        libc::kill(pid, libc::SIGTERM);
-    }
-    for _ in 0..10 {
-        if let Ok(Some(_)) = child.try_wait() {
-            return;
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
         }
-        thread::sleep(Duration::from_millis(100));
+        for _ in 0..10 {
+            if let Ok(Some(_)) = child.try_wait() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
     }
     let _ = child.kill();
     let _ = child.wait();

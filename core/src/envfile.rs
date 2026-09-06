@@ -3,8 +3,10 @@
 
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 /// 写 .env。key 为空时清空文件内容。返回 None 表示成功，Some(msg) 表示失败原因。
 pub fn write_env(home_dir: &Path, api_key: &str) -> Option<String> {
@@ -21,9 +23,16 @@ pub fn write_env(home_dir: &Path, api_key: &str) -> Option<String> {
                 return Some(format!("write .env: {e}"));
             }
             if let Ok(meta) = f.metadata() {
-                let mut perms = meta.permissions();
-                perms.set_mode(0o600);
-                let _ = std::fs::set_permissions(&env_file, perms);
+                #[cfg(unix)]
+                {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o600);
+                    let _ = std::fs::set_permissions(&env_file, perms);
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = meta;
+                }
             }
             None
         }
@@ -43,8 +52,11 @@ mod tests {
         assert!(write_env(&dir, "sk-test").is_none());
         let content = std::fs::read_to_string(dir.join(".env")).unwrap();
         assert!(content.contains("DEEPSEEK_API_KEY=sk-test"));
-        let perms = std::fs::metadata(dir.join(".env")).unwrap().permissions();
-        assert_eq!(perms.mode() & 0o777, 0o600);
+        #[cfg(unix)]
+        {
+            let perms = std::fs::metadata(dir.join(".env")).unwrap().permissions();
+            assert_eq!(perms.mode() & 0o777, 0o600);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

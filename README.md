@@ -70,7 +70,20 @@ dsh-mobile-rust/
   - 客户端 `send_msg` → 服务端落盘 `$DSH_HOME/dsh-link.received.jsonl` 并回 `ack`，供上层接管执行。
 - Rust 与 Android 端（`DshChannel.java`，纯 Java 手写 WS，零三方依赖）解析逻辑逐字段一致，单测与端到端验证通过。
 
-### Windows 上构建与运行（可直接安装使用）
+### Windows：免安装包（开箱即用，推荐）
+无需单独安装 Node.js 或其他运行时。从 GitHub Releases 下载 **`DSH-Desktop-win-x64.zip`**，解压到任意目录（保持整个文件夹完整），**双击 `start.bat`** 即可：
+
+```text
+DSH-Desktop/
+├── start.bat        # 双击启动（会自动打开浏览器配对页）
+├── dsh-desktop.exe  # Windows 守护进程（仅依赖系统自带 DLL）
+├── node.exe         # 内置 Node 运行时（已随包附带，无需安装）
+└── payload/dsh-app/ # DSH Web 前端/服务源码（已内置）
+```
+
+启动后会自动拉起内置 DSH Web 服务，并弹出浏览器打开 `http://127.0.0.1:5780/pair`。手机打开本 App「设置 → 连接电脑」，**扫码**配对页二维码，或**粘贴**终端窗口里打印的 `dsh-link://…` 链接，即可完成配对同步（详见下方「手机端配对」）。
+
+### Windows：从源码构建（开发者）
 ```bash
 # Rust 交叉编译到 Windows（在 Windows 本机或 CI 中）
 cargo build --release -p dsh-desktop --target x86_64-pc-windows-msvc

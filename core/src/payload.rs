@@ -4,8 +4,10 @@
 
 use std::fs::File;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use zip::ZipArchive;
 
@@ -23,10 +25,13 @@ pub struct ExtractOutcome {
 }
 
 fn chmod_x(p: &Path) {
-    if let Ok(meta) = std::fs::metadata(p) {
-        let mut perms = meta.permissions();
-        perms.set_mode(0o755);
-        let _ = std::fs::set_permissions(p, perms);
+    #[cfg(unix)]
+    {
+        if let Ok(meta) = std::fs::metadata(p) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(p, perms);
+        }
     }
 }
 
@@ -120,8 +125,11 @@ mod tests {
         assert_eq!(r.files, 2);
         assert!(dest.join(MARKER).exists());
         assert_eq!(state::read(&state_f), "ready");
-        let meta = std::fs::metadata(dest.join("termux/usr/bin/node")).unwrap();
-        assert_eq!(meta.permissions().mode() & 0o111, 0o111);
+        #[cfg(unix)]
+        {
+            let meta = std::fs::metadata(dest.join("termux/usr/bin/node")).unwrap();
+            assert_eq!(meta.permissions().mode() & 0o111, 0o111);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
