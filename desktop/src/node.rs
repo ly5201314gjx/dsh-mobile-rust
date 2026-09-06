@@ -1,7 +1,7 @@
 //! 桌面端启动内置 DSH Web 服务（node `lib/bin.js web`）。
 //! 与 `dsh-core::server` 的目标一致（守护 node 进程、崩溃重启），但：
 //!  - node 来自系统/随包（非 termux 前缀），无需 LD_LIBRARY_PATH；
-//!  - 默认绑定 `0.0.0.0`，让同一局域网内的手机可直接访问/被代理。
+//!  - 默认绑定 `127.0.0.1`（回环）：DSH web 拒绝非回环地址，对外访问一律经配对端口 5780 / 隧道 / token 代理转发。
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -21,7 +21,7 @@ pub struct DesktopCfg {
     pub log_file: PathBuf,
     /// DSH web 端口。
     pub web_port: u16,
-    /// 绑定地址（默认 0.0.0.0）。
+    /// 绑定地址（默认 127.0.0.1 回环；DSH web 拒绝非回环）。
     pub host: String,
 }
 

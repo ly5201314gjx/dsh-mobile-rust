@@ -1,0 +1,17 @@
+# ============================================================
+# 固定域名（自有域名）命名隧道配置示例
+# 用法：把本文件复制为 config.yml，替换 <占位符>，然后：
+#   cloudflared tunnel --config config.yml --no-autoupdate run <你的隧道名>
+# 参见同目录 SETUP_OWN_DOMAIN.md 的完整步骤
+# ============================================================
+# cloudflared login 后的本地证书目录，<uuid> 是 `cloudflared tunnel create <name>` 的 ID
+credentials-file: C:\Users\<用户名>\.cloudflared\<your-tunnel-uuid>.json
+ingress:
+  # 配对通道 -> 本机配对/WSS 服务（5780）
+  - hostname: pair.your-domain.com
+    service: http://127.0.0.1:5780
+  # Web 控制台 -> 本机 token 注入代理（3090，再由代理转发到 DSH Web 127.0.0.1:3080）
+  - hostname: web.your-domain.com
+    service: http://127.0.0.1:3090
+  # 其余一律 404
+  - service: http_status:404

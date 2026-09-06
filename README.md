@@ -151,6 +151,18 @@ dsh-link-wss://xxxx.trycloudflare.com/#key=<hex>&web=yyyy.trycloudflare.com
 
 > 安全边界：中继/隧道为**透明+WSS 传输加密**（在公共链路上保密；明文帧由配对 key 约束两端身份）。如需更强的端到端加密（Curve25519 ECDH + XSalsa20-Poly1305，参考 Paseo）可作后续增强。
 
+#### 方案三：自有域名（推荐长期使用，域名永不失效）
+
+如果你有自己的域名（托管在 Cloudflare），可以把配对/Web 入口固定到自己的子域名，例如：
+
+```
+pair 子域名 -> 本机 5780（配对 / WSS 通道）       web 子域名 -> 本机 3090（token 注入代理）-> 127.0.0.1:3080（DSH Web）
+dsh-link-wss://pair.你的域/#key=<hex>&web=web.你的域    网页控制台：https://web.你的域/
+```
+
+一次性配置（详见 `desktop/fixed-domain/SETUP_OWN_DOMAIN.md`）：`cloudflared login` → `cloudflared tunnel create` → `cloudflared tunnel route dns ...` → 按 `config.example.yml` 写 `config.yml`，之后每次**双击 `start_fixed_domain.bat`** 即可，域名固定，只有每次的 key/token 会变。同时附带 `open-web-console.bat` 一键打开电脑端 Web 控制台（token 由代理自动注入）。
+
+`desktop/fixed-domain/` 目录提供：一键启动脚本、Web 控制台打开脚本、token 注入代理 `dsh-token-proxy.js`、配置文件示例与配置文档。
 ## 构建（全 Rust，零 Gradle）
 需要：Rust 稳定版、`aarch64-linux-android` 交叉目标 + NDK 链接器、Android SDK（build-tools + platform android-34）、JDK 17。
 ```bash
