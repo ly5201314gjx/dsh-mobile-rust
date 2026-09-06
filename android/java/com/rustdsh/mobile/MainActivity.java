@@ -651,7 +651,8 @@ public class MainActivity extends Activity {
         Uri data = intent.getData();
         if (data == null) return;
         String scheme = data.getScheme();
-        if (scheme == null || !scheme.equalsIgnoreCase("dsh-link")) return;
+        if (scheme == null || !(scheme.equalsIgnoreCase("dsh-link")
+                || scheme.equalsIgnoreCase("dsh-link-wss"))) return;
 
         DshLink dl = DshLink.parse(data.toString());
         if (dl == null) {

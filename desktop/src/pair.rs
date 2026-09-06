@@ -20,17 +20,24 @@ pub struct PairServer {
     pub advertise_host: Option<String>,
     /// 中继模式：覆盖链接/二维码里的端口（否则用本机 port）。
     pub advertise_port: Option<u16>,
+    /// 中继/隧道模式：链接是否走 WSS/TLS（true 则二维码用 dsh-link-wss://）。
+    pub advertise_tls: bool,
+    /// 隧道模式：DSH Web UI 的对外地址（第二个 Cloudflare 隧道），形如 `xxx.trycloudflare.com`。
+    pub advertise_web_host: Option<String>,
 }
 
 impl PairServer {
-    /// 供手机/浏览器使用的 dsh-link 链接（中继模式下指向中继地址）。
+    /// 供手机/浏览器使用的 dsh-link 链接（中继/隧道模式下指向中继/隧道地址）。
     pub fn link(&self) -> Link {
         let host = self
             .advertise_host
             .clone()
             .unwrap_or_else(|| self.public_ip.clone());
         let port = self.advertise_port.unwrap_or(self.port);
-        Link::new(host, port, self.key.clone())
+        let mut l = Link::new(host, port, self.key.clone());
+        l.tls = self.advertise_tls;
+        l.web_host = self.advertise_web_host.clone();
+        l
     }
 
     /// 配对页地址（浏览器打开）。
@@ -225,8 +232,9 @@ fn page_html(pp: &PairPayload) -> String {
 <div class="status" id="status"></div>
 <script>
  const host=location.hostname, port=location.port||'80';
+ const proto=location.protocol==='https:'?'wss':'ws';
  try {{
-   const ws=new WebSocket(`ws://${{host}}:${{port}}/ws?key={key}`);
+   const ws=new WebSocket(`${{proto}}://${{host}}:${{port}}/ws?key={key}`);
    const st=document.getElementById('status');
    ws.onopen=()=>st.textContent='✓ 已连接电脑端通道';
    ws.onmessage=(ev)=>{{{{

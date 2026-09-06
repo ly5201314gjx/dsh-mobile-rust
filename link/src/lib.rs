@@ -18,6 +18,8 @@ pub const PROTOCOL_VERSION: u8 = 1;
 pub const DEFAULT_LINK_PORT: u16 = 5780;
 /// 默认链接 scheme。
 pub const SCHEME: &str = "dsh-link";
+/// WSS（TLS 加密）链接 scheme，用于跨网络经 Cloudflare 隧道配对。
+pub const SCHEME_WSS: &str = "dsh-link-wss";
 /// 手动输入/浏览器打开的 http 前缀（兼容），同一链接也会被编码成该形态便于分享。
 pub const SCHEME_HTTP: &str = "http";
 
@@ -72,8 +74,10 @@ impl fmt::Debug for PairingKey {
 
 /// 一个可分享的配对链接；也等价于二维码负载。
 ///
-/// `dsh-link://example.com:5780/#key=<hex>`（主形态，二维码）
-/// `http://example.com:5780/pair?key=<hex>`（浏览器/手动输入兼容形态）
+/// `dsh-link://example.com:5780/#key=<hex>`（主形态，二维码，局域网）
+/// `dsh-link-wss://example.com/#key=<hex>&web=<webhost>`（WSS/TLS 形态，跨网络经 Cloudflare 隧道；
+///   `web` 是第二个隧道（DSH Web UI）的地址，可缺省）
+/// `https://example.com/pair?key=<hex>`（浏览器/手动输入兼容形态）
 #[derive(Clone, PartialEq, Eq)]
 pub struct Link {
     pub host: String,
@@ -81,6 +85,11 @@ pub struct Link {
     pub key: PairingKey,
     /// 是否附带端口（默认 false，使用 DEFAULT_LINK_PORT）。
     pub http_mode: bool,
+    /// 是否走 WSS/TLS（true 时二维码用 dsh-link-wss://，安卓用 SSL Socket 连接）。
+    pub tls: bool,
+    /// 可选的 DSH Web UI 对外地址（第二个 Cloudflare 隧道），形如 `xxx.trycloudflare.com`。
+    /// 缺省时手机端回落用 `host` 访问 Web UI。
+    pub web_host: Option<String>,
 }
 
 impl Link {
@@ -90,63 +99,122 @@ impl Link {
             port,
             key,
             http_mode: false,
+            tls: false,
+            web_host: None,
         }
+    }
+
+    /// 便捷构造：WSS 链接（跨网络隧道）。
+    pub fn secure(host: impl Into<String>, port: u16, key: PairingKey) -> Self {
+        let mut l = Link::new(host, port, key);
+        l.tls = true;
+        l
     }
 
     /// 二维码负载 / 分享文本。
     pub fn to_qr(&self) -> String {
+        let scheme = if self.http_mode {
+            if self.tls {
+                "https"
+            } else {
+                SCHEME_HTTP
+            }
+        } else if self.tls {
+            SCHEME_WSS
+        } else {
+            SCHEME
+        };
+        // WSS 形态的 host 跟随 tls：默认 443，无需显式端口（CLOUDFLARE 80/443）
+        let authority = if self.tls {
+            self.host.clone()
+        } else {
+            format!("{}:{}", self.host, self.port)
+        };
+        // tls 形态把可选 web 隧道地址作为 `&web=` 参数携带
+        let web_param = if self.tls {
+            match &self.web_host {
+                Some(w) => format!("&web={w}"),
+                None => String::new(),
+            }
+        } else {
+            String::new()
+        };
         if self.http_mode {
+            let web = match &self.web_host {
+                Some(w) => format!("&web={w}"),
+                None => String::new(),
+            };
             format!(
-                "{}://{}:{}/pair?key={}",
-                SCHEME_HTTP,
-                self.host,
-                self.port,
-                self.key.to_hex()
+                "{}://{}/pair?key={}{}",
+                scheme,
+                authority,
+                self.key.to_hex(),
+                web
             )
         } else {
             format!(
-                "{}://{}:{}/#key={}",
-                SCHEME,
-                self.host,
-                self.port,
-                self.key.to_hex()
+                "{}://{}/#key={}{}",
+                scheme,
+                authority,
+                self.key.to_hex(),
+                web_param
             )
         }
     }
 
-    /// 从用户填入/扫描的文本解析链接。支持 `dsh-link://` 与 `http(s)://` 两种形态。
+    /// 从用户填入/扫描的文本解析链接。支持 `dsh-link://`、`dsh-link-wss://` 与 `http(s)://` 形态。
     pub fn parse(s: &str) -> Option<Link> {
         let s = s.trim();
         if s.is_empty() {
             return None;
         }
-        // 统一为单位 URL，抽出 authority 与 key
+        // 统一剥掉 scheme，抽出 authority 与 key；同时判定是否 TLS
         let lower = s.to_ascii_lowercase();
-        let (rest, http_mode): (&str, bool) = if let Some(_) = lower.strip_prefix("dsh-link://") {
-            (&s["dsh-link://".len()..], false)
-        } else if let Some(_) = lower.strip_prefix("http://") {
-            (&s["http://".len()..], true)
-        } else if let Some(_) = lower.strip_prefix("https://") {
-            (&s["https://".len()..], true)
-        } else {
-            // 也允许直接剥掉 scheme 后就是 `host:port/...`
-            (&s[..], false)
-        };
+        let (rest, http_mode, tls): (&str, bool, bool) =
+            if let Some(r) = lower.strip_prefix("dsh-link-wss://") {
+                (&s["dsh-link-wss://".len()..], false, true)
+            } else if let Some(_) = lower.strip_prefix("dsh-link://") {
+                (&s["dsh-link://".len()..], false, false)
+            } else if let Some(_) = lower.strip_prefix("https://") {
+                (&s["https://".len()..], true, true)
+            } else if let Some(_) = lower.strip_prefix("http://") {
+                (&s["http://".len()..], true, false)
+            } else {
+                // 也允许直接剥掉 scheme 后就是 `host:port/...`
+                (&s[..], false, false)
+            };
 
         let rest = rest.split('/').next()?; // 去掉路径
         if rest.is_empty() {
             return None;
         }
-        // key 可能在 fragment `#key=` 或 query `?key=`
+        // key 可能在 fragment `#key=`（默认）、query `?key=`（http 形态）；
+        // `tls=1` 查询参数可显式开启 TLS
         let key = extract_key(s)?;
+        let tls = tls || s.contains("tls=1");
 
         // host[:port]，IPv6 用 [..]
         let (host, port) = split_host_port(rest)?;
+        // WSS 默认端口 443（无显式端口时）
+        let port = match port {
+            Some(p) => p,
+            None => {
+                if tls {
+                    443
+                } else {
+                    DEFAULT_LINK_PORT
+                }
+            }
+        };
+        // 可选 `web=` 参数（DSH Web UI 的第二个隧道地址）
+        let web_host = extract_web(s);
         Some(Link {
-            host: host.to_string(),
-            port: port.unwrap_or(DEFAULT_LINK_PORT),
+            host,
+            port,
             key,
             http_mode,
+            tls,
+            web_host,
         })
     }
 
@@ -166,6 +234,23 @@ fn extract_key(s: &str) -> Option<PairingKey> {
                 .unwrap_or(tail.len());
             if let Some(k) = PairingKey::from_hex(&tail[..end]) {
                 return Some(k);
+            }
+        }
+    }
+    None
+}
+
+/// 提取可选的 `web=` DSH Web UI 隧道地址；不存在返回 None。
+fn extract_web(s: &str) -> Option<String> {
+    for marker in ["&web=", "?web=", "#web="] {
+        if let Some(idx) = s.find(marker) {
+            let tail = &s[idx + marker.len()..];
+            let end = tail
+                .find(|c: char| c == '#' || c == '?' || c == '&' || c.is_whitespace())
+                .unwrap_or(tail.len());
+            let w = tail[..end].trim();
+            if !w.is_empty() {
+                return Some(w.to_string());
             }
         }
     }
@@ -294,6 +379,36 @@ mod tests {
         assert_eq!(parsed.host, "192.168.1.5");
         assert_eq!(parsed.port, 5780);
         assert_eq!(parsed.key, k.clone());
+        assert!(!parsed.tls);
+        assert_eq!(parsed.web_host, None);
+    }
+
+    #[test]
+    fn link_wss_roundtrip() {
+        let k = PairingKey::random();
+        let mut l = Link::secure("abc.trycloudflare.com", 443, k.clone());
+        l.web_host = Some("web.trycloudflare.com".to_string());
+        let qr = l.to_qr();
+        assert!(qr.starts_with("dsh-link-wss://abc.trycloudflare.com/#key="), "qr={qr}");
+        assert!(qr.contains("&web=web.trycloudflare.com"), "qr={qr}");
+        // 注意 to_qr 的 `&web=` 实际在 #key=… 之后
+        let parsed = Link::parse(&qr).unwrap();
+        assert_eq!(parsed.host, "abc.trycloudflare.com");
+        assert_eq!(parsed.port, 443);
+        assert_eq!(parsed.key, k.clone());
+        assert!(parsed.tls);
+        assert_eq!(parsed.web_host.as_deref(), Some("web.trycloudflare.com"));
+    }
+
+    #[test]
+    fn link_wss_parse_no_web() {
+        let k = PairingKey::random();
+        let qr = format!("dsh-link-wss://abc.trycloudflare.com/#key={}", k.to_hex());
+        let l = Link::parse(&qr).unwrap();
+        assert!(l.tls);
+        assert_eq!(l.host, "abc.trycloudflare.com");
+        assert_eq!(l.port, 443);
+        assert_eq!(l.web_host, None);
     }
 
     #[test]

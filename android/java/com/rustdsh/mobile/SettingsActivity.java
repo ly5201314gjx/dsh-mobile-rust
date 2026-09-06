@@ -287,7 +287,7 @@ public class SettingsActivity extends Activity {
         paired = dl;
         channelStatus.setText(R.string.channel_connecting);
         sessionStatus.setText(R.string.session_idle);
-        DshChannel c = new DshChannel(dl.host, dl.linkPort, dl.key, new DshChannel.Listener() {
+        DshChannel c = new DshChannel(dl.host, dl.linkPort, dl.key, dl.tls, new DshChannel.Listener() {
             @Override public void onOpen(String serverId, String serverName) {
                 runOnUiThread(new Runnable() {
                     @Override public void run() {

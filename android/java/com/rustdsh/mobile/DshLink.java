@@ -18,12 +18,18 @@ public final class DshLink {
     public final int linkPort;
     public final String key;
     public final boolean httpMode;
+    /** 是否走 WSS/TLS（dsh-link-wss:// 或 https://）→ 连接用 SSL Socket。 */
+    public final boolean tls;
+    /** 可选的 DSH Web UI 对外地址（第二个 CF 隧道），缺省为 null。 */
+    public final String webHost;
 
-    private DshLink(String host, int linkPort, String key, boolean httpMode) {
+    private DshLink(String host, int linkPort, String key, boolean httpMode, boolean tls, String webHost) {
         this.host = host;
         this.linkPort = linkPort;
         this.key = key;
         this.httpMode = httpMode;
+        this.tls = tls;
+        this.webHost = webHost;
     }
 
     /** 解析一条配对链接；无法识别时返回 null。 */
@@ -33,19 +39,29 @@ public final class DshLink {
         if (s.isEmpty()) return null;
 
         boolean httpMode;
+        boolean tls;
         String rest;
         String lower = s.toLowerCase();
-        if (lower.startsWith("dsh-link://")) {
+        if (lower.startsWith("dsh-link-wss://")) {
             httpMode = false;
+            tls = true;
+            rest = s.substring("dsh-link-wss://".length());
+        } else if (lower.startsWith("dsh-link://")) {
+            httpMode = false;
+            tls = false;
             rest = s.substring("dsh-link://".length());
         } else if (lower.startsWith("https://")) {
             httpMode = true;
+            tls = true;
             rest = s.substring("https://".length());
         } else if (lower.startsWith("http://")) {
             httpMode = true;
+            tls = false;
             rest = s.substring("http://".length());
         } else {
             httpMode = false;
+            // 兼容 `tls=1` 查询参数显式开启
+            tls = s.contains("tls=1");
             rest = s;
         }
 
@@ -58,7 +74,7 @@ public final class DshLink {
         if (key == null) return null;
 
         String host = authority;
-        int port = DEFAULT_LINK_PORT;
+        int port = tls ? 443 : DEFAULT_LINK_PORT;
         // 支持 [ipv6]:port
         if (authority.startsWith("[")) {
             int close = authority.indexOf(']');
@@ -79,7 +95,7 @@ public final class DshLink {
             }
         }
         if (host.isEmpty()) return null;
-        return new DshLink(host, port, key, httpMode);
+        return new DshLink(host, port, key, httpMode, tls, extractWeb(s));
     }
 
     private static Integer parsePort(String p) {
@@ -106,18 +122,52 @@ public final class DshLink {
         return s.substring(start, end);
     }
 
-    /** 电脑端可远程操控的 DSH Web 地址（桌面 daemon 把 DSH web 绑到 0.0.0.0 的默认端口）。 */
+    /** 提取可选的 `web=`（DSH Web UI 隧道地址）；不存在返回 null。 */
+    private static String extractWeb(String s) {
+        int idx = s.indexOf("web=");
+        if (idx < 0) return null;
+        int start = idx + 4;
+        int end = start;
+        int n = s.length();
+        while (end < n) {
+            char c = s.charAt(end);
+            if (c == '#' || c == '?' || c == '&' || Character.isWhitespace(c)) break;
+            end++;
+        }
+        String w = s.substring(start, end).trim();
+        return w.isEmpty() ? null : w;
+    }
+
+    /** 电脑端可远程操控的 DSH Web 地址。
+     *  WSS/隧道形态：优先用 `webHost`（第二个 CF 隧道，https）；缺省回落 host https。 */
     public String webUrl() {
+        if (tls) {
+            String w = (webHost != null && !webHost.isEmpty()) ? webHost : host;
+            return "https://" + w + "/";
+        }
         return "http://" + host + ":" + DEFAULT_WEB_PORT + "/";
     }
 
     /** 配对服务（二维码/链接信息/通道）地址。 */
     public String pairBase() {
+        if (tls) {
+            // 隧道默认 443，无显式端口
+            return "https://" + host;
+        }
         return "http://" + host + ":" + linkPort;
     }
 
     @Override
     public String toString() {
-        return "dsh-link://" + host + ":" + linkPort + "/#key=" + key;
+        String scheme = tls ? "dsh-link-wss" : "dsh-link";
+        // tls 形态默认 443：省略端口，与 to_qr 一致；web 隧道地址随 &web= 携带
+        String base;
+        if (tls) {
+            String hostPart = (linkPort == 443) ? host : host + ":" + linkPort;
+            base = scheme + "://" + hostPart + "/#key=" + key;
+            if (webHost != null && !webHost.isEmpty()) base += "&web=" + webHost;
+            return base;
+        }
+        return scheme + "://" + host + ":" + linkPort + "/#key=" + key;
     }
 }

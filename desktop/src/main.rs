@@ -102,6 +102,27 @@ fn main() {
         None
     };
 
+    // 隧道模式：`--advertise <host|host:port|wss://host|https://host[:port]>`。
+    // 只改二维码/链接指向的对外地址（如 Cloudflare /wss 隧道），本端继续监听 local WS 服务，不出站连中继。
+    // WSS 就用 TLS 链接，安卓以 SSL Socket 连接。
+    let advertise = if has(&args, "--advertise") {
+        parse_advertise(&flag(&args, "--advertise", ""))
+    } else {
+        None
+    };
+    // 隧道模式：`--advertise-web <host[:port]>` 指定 DSH Web UI 的第二个隧道地址
+    //（形如 xxx.trycloudflare.com），会随配对链接以 `&web=` 参数带给手机端。
+    let advertise_web = if has(&args, "--advertise-web") {
+        let v = flag(&args, "--advertise-web", "").trim().to_string();
+        if v.is_empty() {
+            None
+        } else {
+            Some(v)
+        }
+    } else {
+        None
+    };
+
     let key = PairingKey::random();
     install_signal_handlers();
     println!(
@@ -133,8 +154,14 @@ fn main() {
         Some(home_dir)
     };
 
-    let advertise_host = relay.as_ref().map(|(h, _)| h.clone());
-    let advertise_port = relay.as_ref().map(|(_, p)| *p);
+    // 广告地址：优先 --advertise（隧道），其次 --relay（中继），否则 LAN 本机地址
+    let (advertise_host, advertise_port, advertise_tls) = if let Some((h, p, t)) = advertise {
+        (Some(h), Some(p), t)
+    } else if let Some((h, p)) = relay.as_ref() {
+        (Some(h.clone()), Some(*p), false)
+    } else {
+        (None, None, false)
+    };
 
     let server = pair::PairServer {
         bind: "0.0.0.0".into(),
@@ -144,6 +171,8 @@ fn main() {
         home_dir: home_opt.clone(),
         advertise_host,
         advertise_port,
+        advertise_tls,
+        advertise_web_host: advertise_web.clone(),
     };
 
     // 中继模式：后台线程持续出站连中继，承担 server 角色（hello/session_snap/send_msg）
@@ -158,6 +187,9 @@ fn main() {
     }
 
     println!("[DSH Desktop] 配对链接: {}", server.link().to_qr());
+    if let Some(w) = &advertise_web {
+        println!("[DSH Desktop] Web UI 隧道地址: https://{w}");
+    }
     println!(
         "[DSH Desktop] 浏览器打开配对页（含二维码）: {}",
         server.page_url()
@@ -167,4 +199,37 @@ fn main() {
         eprintln!("[dsh-desktop] pair server error: {e}");
         std::process::exit(1);
     }
+}
+
+/// 解析 `--advertise` 对外地址，返回 (host, port, tls)。
+/// 支持：`host`、`host:port`、`wss://host[:port]`、`https://host[:port]`、
+/// `ws://host[:port]`、`http://host[:port]`（后两者默认 5780）。TLS 默认端口 443。
+fn parse_advertise(s: &str) -> Option<(String, u16, bool)> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // 剥 scheme 并判定 tls
+    let (rest, tls) = {
+        let lower = s.to_ascii_lowercase();
+        if let Some(r) = lower.strip_prefix("wss://") {
+            (&s["wss://".len()..], true)
+        } else if let Some(r) = lower.strip_prefix("https://") {
+            (&s["https://".len()..], true)
+        } else if let Some(r) = lower.strip_prefix("ws://") {
+            (&s["ws://".len()..], false)
+        } else if let Some(r) = lower.strip_prefix("http://") {
+            (&s["http://".len()..], false)
+        } else {
+            (s, false)
+        }
+    };
+    let rest = rest.split('/').next().unwrap_or(rest);
+    let (host, port) = match crate::relay_client::parse_endpoint(rest) {
+        Some((h, p)) => (h, p),
+        // 无端口的裸 host（如 wss://xxx.trycloudflare.com）→ 默认端口
+        None => (rest.to_string(), 0),
+    };
+    let port = if port != 0 { port } else if tls { 443 } else { DEFAULT_LINK_PORT };
+    Some((host, port, tls))
 }

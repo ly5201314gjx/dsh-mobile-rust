@@ -75,10 +75,12 @@ dsh-mobile-rust/
 
 ```text
 DSH-Desktop/
-├── start.bat        # 双击启动（会自动打开浏览器配对页）
-├── dsh-desktop.exe  # Windows 守护进程（仅依赖系统自带 DLL）
-├── node.exe         # 内置 Node 运行时（已随包附带，无需安装）
-└── payload/dsh-app/ # DSH Web 前端/服务源码（已内置）
+├── start.bat              # 局域网模式：双击启动（自动打开浏览器配对页）
+├── start_cloudflare.bat   # 异网络模式（推荐，免服务器）：自动开 Cloudflare 隧道
+├── cloudflared.exe        # Cloudflare 隧道客户端（已内置）
+├── dsh-desktop.exe        # Windows 守护进程（仅依赖系统自带 DLL）
+├── node.exe               # 内置 Node 运行时（已随包附带，无需安装）
+└── payload/dsh-app/       # DSH Web 前端/服务源码（已内置）
 ```
 
 启动后会自动拉起内置 DSH Web 服务，并弹出浏览器打开 `http://127.0.0.1:5780/pair`。手机打开本 App「设置 → 连接电脑」，**扫码**配对页二维码，或**粘贴**终端窗口里打印的 `dsh-link://…` 链接，即可完成配对同步（详见下方「手机端配对」）。
@@ -105,8 +107,35 @@ dsh-desktop.exe --app-dir payload\dsh-app --node node --home dsh-home
 
 > 说明：手机与电脑需在同一局域网（电脑的 5780/3080 端口防火墙放行）。配对成功后在设置页可见「已配对：dsh-desktop@主机名」，并列出**电脑端 DSH 会话数量**；点「向电脑端发送测试指令」可验证双向通道（电脑端会落盘 `dsh-link.received.jsonl` 并应答）。
 
-### 异网络配对（跨网络，参考 Paseo 的 relay）
-默认 `dsh-link://…` 指的是电脑的局域网地址，手机必须与电脑同网。要实现 **手机与电脑在不同网络也能配对**，借助自研的轻量中继 `dsh-relay`（`relay/`）：两端**都主动出站连到中继**，中继按配对密钥撮合两端后做帧级双向透明转发（业务 hello/session_snap/send_msg 由两端自完成，中继不解析内容）。
+### 异网络配对（跨网络）
+
+默认 `dsh-link://…` 指的是电脑的局域网地址，手机必须与电脑同网。要实现 **手机与电脑在不同网络也能配对**，准备了两种方案，**推荐方案一（免服务器、免域名、免 token，开箱即用）**：
+
+#### 方案一：Cloudflare 快速隧道（推荐，免服务器）
+免安装包里已内置 `cloudflared.exe`，**双击 `start_cloudflare.bat`** 即可自动完成异网络穿透，无需任何账号、token 或域名：
+
+```text
+DSH-Desktop/
+├── start_cloudflare.bat   # 异网络模式（推荐）：一键开 Cloudflare 快速隧道
+└── cloudflared.exe        # Cloudflare 隧道客户端（已内置）
+```
+
+原理：`start_cloudflare.bat` 会用 `cloudflared` 创建**两个临时公网隧道**（`*.trycloudflare.com`）：
+
+```
+ 隧道 A -> 本机 5780（配对/WSS 通道）      隧道 B -> 本机 3080（DSH Web UI）
+```
+
+启动后自动把两个公网地址交给 `dsh-desktop`，配对链接/二维码自动变为 WSS 加密形态：
+
+```
+dsh-link-wss://xxxx.trycloudflare.com/#key=<hex>&web=yyyy.trycloudflare.com
+```
+
+手机（**任意网络**）扫码或粘贴该链接后，经 **TLS 加密通道**与电脑端配对、双向同步，体验与局域网完全一致，且电脑无需开放任何端口、无需公网 IP。
+
+#### 方案二：自建中继 `dsh-relay`（需一台公网服务器）
+两端**都主动出站连到中继**，中继按配对密钥撮合两端后做帧级双向透明转发（业务 hello/session_snap/send_msg 由两端自完成，中继不解析内容）。
 
 ```
  手机（任意网络）                中继 dsh-relay（公网可达）              电脑 dsh-desktop
@@ -115,12 +144,12 @@ dsh-desktop.exe --app-dir payload\dsh-app --node node --home dsh-home
 ```
 
 配置步骤：
-1. 在一台**公网可达**的服务器上部署 `dsh-relay`（Release 附带 `dsh-relay.exe` / `dsh-relay-linux-x64`），放行 TCP `5781` 端口并运行。Windows 服务器直接双击随包附带的 `start_relay.bat`。
-2. 在电脑端的免安装包目录新建 `relay-server.txt`，填入一行中继地址，例如 `my-server.com:5781`。
-3. 电脑端双击 `start.bat`。`dsh-desktop` 启动后会额外以中继地址生成配对链接/二维码，并在后台出站连中继。
-4. 手机扫码/填该 `dsh-link://my-server.com:5781/#key=…` 链接即完成**异网络**配对，体验与局域网完全一致。
+1. 在**公网可达**的服务器上部署 `dsh-relay`（Release 附带 `dsh-relay.exe` / `dsh-relay-linux-x64`），放行 TCP `5781` 端口并运行。Windows 服务器直接双击 `start_relay.bat`。
+2. 在电脑端免安装包目录新建 `relay-server.txt`，填入一行中继地址，例如 `my-server.com:5781`。
+3. 双击 `start.bat`。`dsh-desktop` 额外以中继地址生成配对链接/二维码，并在后台出站连中继。
+4. 手机扫码/填 `dsh-link://my-server.com:5781/#key=…` 即完成**异网络**配对。
 
-> 安全边界：当前版本中继为**透明转发**（中继能看到报文内容，因此请只连你自己部署、可信的中继）。端到端加密（Curve25519 ECDH + XSalsa20-Poly1305，参考 Paseo）为后续增强。
+> 安全边界：中继/隧道为**透明+WSS 传输加密**（在公共链路上保密；明文帧由配对 key 约束两端身份）。如需更强的端到端加密（Curve25519 ECDH + XSalsa20-Poly1305，参考 Paseo）可作后续增强。
 
 ## 构建（全 Rust，零 Gradle）
 需要：Rust 稳定版、`aarch64-linux-android` 交叉目标 + NDK 链接器、Android SDK（build-tools + platform android-34）、JDK 17。

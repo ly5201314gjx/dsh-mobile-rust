@@ -11,8 +11,17 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * DSH Link 通道客户端：纯 Java 实现的 WebSocket 客户端 + DSH Link 报文协议，
@@ -58,6 +67,7 @@ public final class DshChannel {
     private final String host;
     private final int port;
     private final String hexKey;
+    private final boolean tls;
     private final Listener listener;
 
     private volatile boolean running = false;
@@ -65,10 +75,11 @@ public final class DshChannel {
     private OutputStream out;
     private String clientId;
 
-    public DshChannel(String host, int port, String hexKey, Listener listener) {
+    public DshChannel(String host, int port, String hexKey, boolean tls, Listener listener) {
         this.host = host;
         this.port = port;
         this.hexKey = hexKey;
+        this.tls = tls;
         this.listener = listener;
     }
 
@@ -104,7 +115,11 @@ public final class DshChannel {
     private void runLoop() {
         Socket s = null;
         try {
-            s = new Socket();
+            if (tls) {
+                s = insecureSslSocket();
+            } else {
+                s = new Socket();
+            }
             s.connect(new InetSocketAddress(host, port), 8000);
             s.setSoTimeout(20000);
             socket = s;
@@ -276,6 +291,23 @@ public final class DshChannel {
     }
 
     // ------------------------------------------------------------------ 工具
+
+    /** 构造一个信任全部证书的 TLS 套接字（CF 隧道自签/动态证书也放行）。
+     *  仅用于把远程通道加密，密钥仍由配对 key 约束，风险可接受。 */
+    private static SSLSocket insecureSslSocket() throws Exception {
+        TrustManager[] trustAll = new TrustManager[] { new X509TrustManager() {
+            @Override public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+            @Override public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+            @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+        } };
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(null, trustAll, new SecureRandom());
+        HostnameVerifier hv = new HostnameVerifier() {
+            @Override public boolean verify(String h, SSLSession ssls) { return true; }
+        };
+        HttpsURLConnection.setDefaultHostnameVerifier(hv);
+        return (SSLSocket) ctx.getSocketFactory().createSocket();
+    }
 
     private void fail(final String reason) {
         running = false;
