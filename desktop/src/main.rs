@@ -16,6 +16,7 @@
 
 mod node;
 mod pair;
+mod relay_client;
 mod util;
 mod ws;
 
@@ -93,6 +94,14 @@ fn main() {
     let home_dir = PathBuf::from(flag(&args, "--home", "dsh-home"));
     let node = PathBuf::from(flag(&args, "--node", "node"));
 
+    // 中继模式：`--relay <host:port>`。若指定，二维码/链接指向中继，且本端出站连中继承担 server 角色。
+    let relay = if has(&args, "--relay") {
+        let s = flag(&args, "--relay", "");
+        crate::relay_client::parse_endpoint(&s)
+    } else {
+        None
+    };
+
     let key = PairingKey::random();
     install_signal_handlers();
     println!(
@@ -124,13 +133,29 @@ fn main() {
         Some(home_dir)
     };
 
+    let advertise_host = relay.as_ref().map(|(h, _)| h.clone());
+    let advertise_port = relay.as_ref().map(|(_, p)| *p);
+
     let server = pair::PairServer {
         bind: "0.0.0.0".into(),
         port: link_port,
         public_ip: host.clone(),
-        key,
-        home_dir: home_opt,
+        key: key.clone(),
+        home_dir: home_opt.clone(),
+        advertise_host,
+        advertise_port,
     };
+
+    // 中继模式：后台线程持续出站连中继，承担 server 角色（hello/session_snap/send_msg）
+    if let Some((rhost, rport)) = relay {
+        let k = key.clone();
+        let h = home_opt.clone();
+        println!(
+            "[DSH Desktop] 中继模式已开启: 二维码/链接指向 {}:{} , 手机可在异网络配对",
+            rhost, rport
+        );
+        std::thread::spawn(move || relay_client::run_forever(rhost, rport, k, h));
+    }
 
     println!("[DSH Desktop] 配对链接: {}", server.link().to_qr());
     println!(

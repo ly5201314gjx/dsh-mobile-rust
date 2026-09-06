@@ -189,7 +189,9 @@ fn frame_loop<R: Read>(reader: &mut BufReader<R>, out: &mut TcpStream, ctx: &Cha
     }
 }
 
-fn dispatch_text(payload: &[u8], out: &mut TcpStream, ctx: &ChannelCtx) -> io::Result<()> {
+/// 处理一条 DSH Link 业务报文（server 角色）：对 hello 回 ack + 会话摘要，对 send_msg 落盘 + ack。
+/// `out` 用于写回客户端帧。供局域网 ws 服务与中继 relay 客户端共用。
+pub fn dispatch_text<W: Write>(payload: &[u8], out: &mut W, ctx: &ChannelCtx) -> io::Result<()> {
     let text = String::from_utf8_lossy(payload).to_string();
     let msg = match Envelope::from_json(&text) {
         Some(env) => env.msg,
@@ -284,17 +286,17 @@ fn collect_sessions(home: &Path) -> Vec<Session> {
 }
 
 /// 发送文本帧（服务端→客户端，不掩码）。
-fn send_text(out: &mut TcpStream, text: &str) -> io::Result<()> {
+fn send_text<W: Write>(out: &mut W, text: &str) -> io::Result<()> {
     send_frame(out, 0x1, text.as_bytes())
 }
 
-fn send_close(out: &mut TcpStream, code: u16, reason: &str) -> io::Result<()> {
+fn send_close<W: Write>(out: &mut W, code: u16, reason: &str) -> io::Result<()> {
     let mut payload = code.to_be_bytes().to_vec();
     payload.extend_from_slice(reason.as_bytes());
     send_frame(out, 0x8, &payload)
 }
 
-fn send_frame(out: &mut TcpStream, opcode: u8, payload: &[u8]) -> io::Result<()> {
+fn send_frame<W: Write>(out: &mut W, opcode: u8, payload: &[u8]) -> io::Result<()> {
     let len = payload.len();
     let mut hdr = Vec::with_capacity(10);
     hdr.push(0x80 | opcode);

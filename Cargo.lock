@@ -213,6 +213,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "dsh-relay"
+version = "3.0.0"
+
+[[package]]
 name = "dsh-tool"
 version = "3.0.0"
 dependencies = [

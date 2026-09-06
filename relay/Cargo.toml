@@ -1,0 +1,12 @@
+[package]
+name = "dsh-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DSH Link 中继（relay）：按配对密钥撮合 Windows 守护进程与安卓客户端，做帧级双向透明转发，实现跨网络配对（无需公网 IP/端口映射）"
+
+[[bin]]
+name = "dsh-relay"
+path = "src/main.rs"
+
+[dependencies]

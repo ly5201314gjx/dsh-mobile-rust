@@ -16,12 +16,21 @@ pub struct PairServer {
     pub public_ip: String,
     pub key: PairingKey,
     pub home_dir: Option<std::path::PathBuf>,
+    /// 中继模式：覆盖链接/二维码里的 host（否则回落 public_ip）。
+    pub advertise_host: Option<String>,
+    /// 中继模式：覆盖链接/二维码里的端口（否则用本机 port）。
+    pub advertise_port: Option<u16>,
 }
 
 impl PairServer {
-    /// 供手机/浏览器使用的 dsh-link 链接。
+    /// 供手机/浏览器使用的 dsh-link 链接（中继模式下指向中继地址）。
     pub fn link(&self) -> Link {
-        Link::new(self.public_ip.clone(), self.port, self.key.clone())
+        let host = self
+            .advertise_host
+            .clone()
+            .unwrap_or_else(|| self.public_ip.clone());
+        let port = self.advertise_port.unwrap_or(self.port);
+        Link::new(host, port, self.key.clone())
     }
 
     /// 配对页地址（浏览器打开）。

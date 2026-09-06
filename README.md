@@ -105,6 +105,23 @@ dsh-desktop.exe --app-dir payload\dsh-app --node node --home dsh-home
 
 > 说明：手机与电脑需在同一局域网（电脑的 5780/3080 端口防火墙放行）。配对成功后在设置页可见「已配对：dsh-desktop@主机名」，并列出**电脑端 DSH 会话数量**；点「向电脑端发送测试指令」可验证双向通道（电脑端会落盘 `dsh-link.received.jsonl` 并应答）。
 
+### 异网络配对（跨网络，参考 Paseo 的 relay）
+默认 `dsh-link://…` 指的是电脑的局域网地址，手机必须与电脑同网。要实现 **手机与电脑在不同网络也能配对**，借助自研的轻量中继 `dsh-relay`（`relay/`）：两端**都主动出站连到中继**，中继按配对密钥撮合两端后做帧级双向透明转发（业务 hello/session_snap/send_msg 由两端自完成，中继不解析内容）。
+
+```
+ 手机（任意网络）                中继 dsh-relay（公网可达）              电脑 dsh-desktop
+        │  ──出站 WebSocket──►  ws://relay:5781/ws?key=…  ◄──出站 WebSocket──  │
+        └──────────────► 中继按 key 撮合两端，双向转发帧 ◄──────────────┘
+```
+
+配置步骤：
+1. 在一台**公网可达**的服务器上部署 `dsh-relay`（Release 附带 `dsh-relay.exe` / `dsh-relay-linux-x64`），放行 TCP `5781` 端口并运行。Windows 服务器直接双击随包附带的 `start_relay.bat`。
+2. 在电脑端的免安装包目录新建 `relay-server.txt`，填入一行中继地址，例如 `my-server.com:5781`。
+3. 电脑端双击 `start.bat`。`dsh-desktop` 启动后会额外以中继地址生成配对链接/二维码，并在后台出站连中继。
+4. 手机扫码/填该 `dsh-link://my-server.com:5781/#key=…` 链接即完成**异网络**配对，体验与局域网完全一致。
+
+> 安全边界：当前版本中继为**透明转发**（中继能看到报文内容，因此请只连你自己部署、可信的中继）。端到端加密（Curve25519 ECDH + XSalsa20-Poly1305，参考 Paseo）为后续增强。
+
 ## 构建（全 Rust，零 Gradle）
 需要：Rust 稳定版、`aarch64-linux-android` 交叉目标 + NDK 链接器、Android SDK（build-tools + platform android-34）、JDK 17。
 ```bash
