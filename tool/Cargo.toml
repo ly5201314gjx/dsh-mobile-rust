@@ -1,0 +1,22 @@
+[package]
+name = "dsh-tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DSH Mobile 构建工具（Rust 重写原 Python 构建链）：payload 管线 + APK 打包签名"
+
+[[bin]]
+name = "dsh-tool"
+path = "src/main.rs"
+
+[dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tar = "0.4"
+lzma-rs = "0.3"
+serde_json = "1"
+sha1 = "0.10"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+rcgen = "0.13"
+
+[dev-dependencies]
+tempfile = "3"

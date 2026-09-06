@@ -1,0 +1,16 @@
+# Rust build artifacts
+/target
+/Cargo.lock.orig
+
+# Build-time downloads / generated runtime payload (rebuilt via fetch-debs.sh + tool)
+/debs
+/payload
+
+# Build outputs
+/dist
+/android/assets/payload.zip
+
+# Keystores / secrets
+*.keystore
+*.jks
+.env

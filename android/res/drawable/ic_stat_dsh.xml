@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 锈红主题通知小图标：齿轮（外圈顺时针，内孔逆时针绕向成环） -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M23,12 L20.3,15.4 L19.8,19.8 L15.4,20.3 L12,23 L8.6,20.3 L4.2,19.8 L3.7,15.4 L1,12 L3.7,8.6 L4.2,4.2 L8.6,3.7 L12,1 L15.4,3.7 L19.8,4.2 L20.3,8.6 Z M12,6.8 a5.2,5.2 0 1,0 0,10.4 a5.2,5.2 0 1,0 0,-10.4 Z" />
+</vector>

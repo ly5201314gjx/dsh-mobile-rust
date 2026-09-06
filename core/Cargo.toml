@@ -1,0 +1,11 @@
+[package]
+name = "dsh-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DSH Mobile 核心逻辑库（纯 Rust，无 Android 依赖，可在宿主上单测）"
+
+[dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }
+serde_json = "1"
+libc = "0.2"
